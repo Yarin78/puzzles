@@ -5,18 +5,24 @@ import logging
 
 LOG = logging.getLogger(__name__)
 
-SHOW_SOLUTIONS = False
+SHOW_SOLUTIONS = True
 STORE_SOLUTIONS = False
 
 class SlitherlinkSolver:
     xsize: int
     ysize: int
+    input: List[str]
     current: List[Tuple[Tuple[int, int], ...]]
 
-    def __init__(self, xsize: int, ysize: int):
-        self.xsize = xsize
-        self.ysize = ysize
+    def __init__(self, input: List[str]):
+        self.xsize = len(input[0])
+        self.ysize = len(input)
+        self.input = input
         self.current = []
+
+    @staticmethod
+    def empty(xsize: int, ysize: int):
+        return SlitherlinkSolver(["." * xsize] * ysize)
 
     @cache
     def merge_comp(self, vertical: Tuple[Tuple[int, int], ...], horizontal: Tuple[Tuple[int, int], ...]) -> Tuple[Tuple[Tuple[int, int], ...], int]:
@@ -133,27 +139,66 @@ class SlitherlinkSolver:
         print("==" * (self.xsize+1))
         print()
 
+    def validate_constraints(self, horz_segments: Tuple[Tuple[int, int], ...], new_verticals: Tuple[Tuple[int, int], ...], row_num: int, must_x: Tuple[int, ...], must_not_x: Tuple[int, ...]):
+        count = [0] * (self.xsize + 1)
+        for h1, h2 in horz_segments:
+            for h in range(h1, h2):
+                count[h] += 1
+
+        if any(count[m] == 0 for m in must_x):
+            return None, None
+        if any(count[m] == 1 for m in must_not_x):
+            return None, None
+
+        for h1, h2 in new_verticals:
+            if h1 > 0:
+                count[h1-1] += 1
+            count[h1] += 1
+            if h2 > 0:
+                count[h2-1] += 1
+            count[h2] += 1
+
+        new_must_x = []
+        new_must_not_x = []
+
+        if row_num < self.ysize:
+            for x in range(self.xsize):
+                c = self.input[row_num][x]
+                if c != '.':
+                    if count[x] == int(c):
+                        new_must_not_x.append(x)
+                        continue
+                    if count[x] == int(c) - 1:
+                        new_must_x.append(x)
+                        continue
+                    return None, None
+
+        return tuple(new_must_x), tuple(new_must_not_x)
+
 
     @cache
-    def count_loops_rec(self, verticals: Tuple[Tuple[int, int], ...], row_num: int) -> int:
+    def count_loops_rec(self, verticals: Tuple[Tuple[int, int], ...], row_num: int, loop_done: bool, must_x: Tuple[int, ...], must_not_x: Tuple[int, ...]) -> int:
         if row_num > self.ysize:
-            return 0
+            if loop_done and SHOW_SOLUTIONS:
+                self.show_current()
+            return loop_done
 
         num_solutions = 0
         started = len(verticals) > 0
 
-        for horz_segments in self.generate_horizontal_segments(verticals):
+        segments = self.generate_horizontal_segments(verticals) if not loop_done else [()]
+        for horz_segments in segments:
             try:
                 if SHOW_SOLUTIONS or STORE_SOLUTIONS:
                     self.current.append(horz_segments)
                 new_verticals, closed_loops = self.merge_comp(verticals, horz_segments)
-                if closed_loops == 1:
-                    if len(new_verticals) == 0 and started:
-                        if SHOW_SOLUTIONS:
-                            self.show_current()
-                        num_solutions += 1
-                elif closed_loops == 0:
-                    num_solutions += self.count_loops_rec(new_verticals, row_num+1)
+
+                valid_loop = closed_loops == 0 or (closed_loops == 1 and len(new_verticals) == 0 and started)
+                if valid_loop:
+                    new_must_x, new_must_not_x = self.validate_constraints(horz_segments, new_verticals, row_num, must_x, must_not_x)
+                    if new_must_x is not None:
+                        num_solutions += self.count_loops_rec(new_verticals, row_num+1, loop_done or closed_loops > 0, new_must_x, new_must_not_x)
+
             finally:
                 if SHOW_SOLUTIONS or STORE_SOLUTIONS:
                     self.current.pop()
@@ -162,7 +207,7 @@ class SlitherlinkSolver:
 
     def count_loops(self) -> int:
         LOG.debug(f"Counting loops in grid of size {self.xsize}x{self.ysize}")
-        num_solutions = self.count_loops_rec((), 0)
+        num_solutions = self.count_loops_rec((), 0, False, (), ())
         LOG.debug(f"Number of solutions: {num_solutions}")
         try:
             LOG.debug("Cache info:")
@@ -175,9 +220,13 @@ class SlitherlinkSolver:
         return num_solutions
 
 
-logging.basicConfig(level=logging.DEBUG)
-solver = SlitherlinkSolver(int(sys.argv[1]), int(sys.argv[2]))
-solver.count_loops()
+# logging.basicConfig(level=logging.DEBUG)
+# solver = SlitherlinkSolver.empty(int(sys.argv[1]), int(sys.argv[2]))
+# solver.count_loops()
+
+with open(sys.argv[1], "rt") as f:
+    solver = SlitherlinkSolver([line.strip() for line in f.readlines()])
+    print(f"# solutions: {solver.count_loops()}")
 
 # for ysize in range(1, 8):
 #     s = ""

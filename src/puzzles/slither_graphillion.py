@@ -8,5 +8,5 @@ def A140517(n):
     cycles = GraphSet.cycles()
     return cycles.len()
 
-print(A140517(10))
+print(A140517(8))
 
